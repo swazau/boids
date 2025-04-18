@@ -16,7 +16,7 @@ const HEIGHT: f32 = 720.0;
 const WIDTH: f32 = HEIGHT * (16.0 / 9.0);
 
 //drawing stuff
-const NUM_BOIDS: usize = 80; // n
+const NUM_BOIDS: usize = 500; // Starting with 500 boids
 const BOID_SIZE: f32 = 32.0; // Pixels
 
 fn get_boids() -> Vec<boid::Boid> {
@@ -36,6 +36,10 @@ struct State {
     dt: std::time::Duration,
     boids: Vec<boid::Boid>,
     points: Vec<glam::Vec2>,
+    fps_display: graphics::Text,
+    frames: usize,
+    frame_time: std::time::Duration,
+    boid_count: usize,
 }
 
 impl State {
@@ -50,7 +54,32 @@ impl State {
                 glam::vec2(0.0, BOID_SIZE / 3.0),
                 glam::vec2(-BOID_SIZE / 4.0, BOID_SIZE / 2.0),
             ],
+            fps_display: graphics::Text::new(graphics::TextFragment {
+                text: "FPS: 0".to_string(),
+                color: Some(graphics::Color::WHITE),
+                font: Some(graphics::Font::default()),
+                scale: Some(graphics::PxScale::from(20.0)),
+            }),
+            frames: 0,
+            frame_time: std::time::Duration::new(0, 0),
+            boid_count: NUM_BOIDS,
         }
+    }
+    
+    // Helper function to adjust the number of boids
+    fn adjust_boid_count(&mut self, increase: bool, ctx: &mut Context) {
+        if increase {
+            self.boid_count += 100;
+        } else if self.boid_count > 100 {
+            self.boid_count -= 100;
+        }
+        
+        // Update boids
+        self.boids = std::iter::repeat_with(|| boid::Boid::new(WIDTH, HEIGHT))
+            .take(self.boid_count)
+            .collect();
+            
+        println!("Boid count: {}", self.boid_count);
     }
 }
 
@@ -59,12 +88,34 @@ impl event::EventHandler for State {
         self.dt = timer::delta(ctx);
         let tick = (self.dt.subsec_millis() as f32) / 1000.0;
         let pressed_keys = input::keyboard::pressed_keys(ctx);
+        
+        // Update frame counter for FPS calculation
+        self.frames += 1;
+        self.frame_time += self.dt;
+        
+        // Update FPS display every second
+        if self.frame_time.as_secs_f32() >= 1.0 {
+            let fps = self.frames as f32 / self.frame_time.as_secs_f32();
+            self.fps_display = graphics::Text::new(graphics::TextFragment {
+                text: format!("FPS: {:.1} | Boids: {}", fps, self.boid_count),
+                color: Some(graphics::Color::WHITE),
+                font: Some(graphics::Font::default()),
+                scale: Some(graphics::PxScale::from(20.0)),
+            });
+            self.frames = 0;
+            self.frame_time = std::time::Duration::new(0, 0);
+            
+            // Print performance information
+            println!("Current FPS: {:.1} with {} boids", fps, self.boid_count);
+        }
 
         match self.state {
             PlayState::Setup => {
                 self.boids.drain(..);
                 if pressed_keys.contains(&event::KeyCode::Space) {
-                    self.boids = get_boids();
+                    self.boids = std::iter::repeat_with(|| boid::Boid::new(WIDTH, HEIGHT))
+                        .take(self.boid_count)
+                        .collect();
                     self.state = PlayState::Play;
                 }
             }
@@ -76,6 +127,10 @@ impl event::EventHandler for State {
                     self.state = PlayState::Play;
                 } else if pressed_keys.contains(&event::KeyCode::R) {
                     self.state = PlayState::Setup;
+                } else if pressed_keys.contains(&event::KeyCode::Up) {
+                    self.adjust_boid_count(true, ctx);
+                } else if pressed_keys.contains(&event::KeyCode::Down) {
+                    self.adjust_boid_count(false, ctx);
                 }
             }
 
@@ -84,6 +139,10 @@ impl event::EventHandler for State {
                     self.state = PlayState::Pause;
                 } else if pressed_keys.contains(&event::KeyCode::R) {
                     self.state = PlayState::Setup;
+                } else if pressed_keys.contains(&event::KeyCode::Up) {
+                    self.adjust_boid_count(true, ctx);
+                } else if pressed_keys.contains(&event::KeyCode::Down) {
+                    self.adjust_boid_count(false, ctx);
                 }
 
                 for i in 0..(self.boids).len() {
@@ -113,10 +172,10 @@ impl event::EventHandler for State {
         match self.state {
             PlayState::Setup => {
                 let menu_text = graphics::Text::new(graphics::TextFragment {
-                    text: "play : <space>\npause : <p>\nreset : <r>".to_string(),
+                    text: "play : <space>\npause : <p>\nreset : <r>\nadd boids : <up>\nreduce boids : <down>".to_string(),
                     color: Some(graphics::Color::WHITE),
                     font: Some(graphics::Font::default()),
-                    scale: Some(graphics::PxScale::from(100.0)),
+                    scale: Some(graphics::PxScale::from(60.0)),
                 });
 
                 let text_pos = glam::vec2(
@@ -152,19 +211,16 @@ impl event::EventHandler for State {
                     0.1,
                     [1.0, 1.0, 1.0, 0.5].into(),
                 )?;
-                let line = &[
-                    glam::vec2(0.0, 0.0),
-                    glam::vec2(50.0, 5.0),
-                    glam::vec2(42.0, 10.0),
-                    glam::vec2(150.0, 100.0),
-                ];
-                mb.polyline(
-                    graphics::DrawMode::stroke(2.0),
-                    line,
-                    [1.0, 1.0, 1.0, 1.0].into(),
-                )?;
+                
                 let m = mb.build(ctx)?;
                 graphics::draw(ctx, &m, graphics::DrawParam::new())?;
+                
+                // Draw the FPS display in the top-left corner
+                graphics::draw(
+                    ctx,
+                    &self.fps_display,
+                    graphics::DrawParam::default().dest(glam::vec2(10.0, 10.0)),
+                )?;
             }
         };
 
